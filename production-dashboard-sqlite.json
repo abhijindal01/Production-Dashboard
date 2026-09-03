@@ -1,0 +1,571 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "frser-sqlite-datasource",
+          "uid": "bfvn5qddvug3kd"
+        },
+        "definition": "",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": "All",
+        "multi": false,
+        "name": "project",
+        "options": [],
+        "query": "SELECT project_name FROM production_projects ORDER BY start_date DESC",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Production Workflow",
+  "uid": "production-workflow",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(SUM(dp.quantity_produced), 0) AS value FROM production_projects pp LEFT JOIN daily_production dp ON dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Produced",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "color": {
+            "fixedColor": "orange",
+            "mode": "fixed"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(SUM(rl.quantity_reworked), 0) AS value FROM production_projects pp LEFT JOIN rework_log rl ON rl.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Reworked",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(ROUND(SUM(qt.quantity_passed) * 100.0 / NULLIF(SUM(qt.quantity_tested), 0), 1), 0) AS value FROM production_projects pp LEFT JOIN quality_tests qt ON qt.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Pass Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(ROUND(COALESCE(SUM(dp.quantity_produced), 0) * 100.0 / NULLIF(MAX(pp.target_quantity), 0), 1), 0) AS value FROM production_projects pp LEFT JOIN daily_production dp ON dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Progress vs Target",
+      "type": "gauge"
+    },
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 6,
+      "title": "Production Stages",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT\n  ps.stage_name AS metric,\n  COALESCE(SUM(dp.quantity_produced), 0) AS value\nFROM production_stages ps\nJOIN production_projects pp ON pp.id = ps.project_id\nLEFT JOIN daily_production dp\n  ON dp.stage_id = ps.id\n AND dp.project_id = pp.id\nWHERE (pp.project_name = '$project' OR '$project' = 'All')\nGROUP BY ps.id, ps.stage_name, ps.sequence_order\nORDER BY pp.project_name, ps.sequence_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Output by Stage (includes zero quantity stages)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-background"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failed"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT\n  ps.stage_name AS Stage,\n  COALESCE(SUM(qt.quantity_tested), 0) AS Tested,\n  COALESCE(SUM(qt.quantity_passed), 0) AS Passed,\n  COALESCE(SUM(qt.quantity_failed), 0) AS Failed\nFROM production_stages ps\nJOIN production_projects pp ON pp.id = ps.project_id\nLEFT JOIN quality_tests qt\n  ON qt.stage_id = ps.id\n AND qt.project_id = pp.id\nWHERE (pp.project_name = '$project' OR '$project' = 'All')\nGROUP BY ps.id, ps.stage_name, ps.sequence_order\nORDER BY pp.project_name, ps.sequence_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality: Pass vs Fail by Stage (includes zero stages)",
+      "type": "table"
+    },
+    {
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 9,
+      "title": "Trends",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 40
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 10,
+      "targets": [
+        {
+          "queryType": "time_series",
+          "rawQueryText": "SELECT\n  dp.production_date AS time,\n  ps.stage_name AS metric,\n  SUM(dp.quantity_produced) AS value\nFROM daily_production dp\nJOIN production_stages ps ON ps.id = dp.stage_id\nJOIN production_projects pp ON pp.id = dp.project_id\nWHERE (pp.project_name = '$project' OR '$project' = 'All')\n  AND dp.production_date >= date('now', '-30 days')\nGROUP BY dp.production_date, ps.id, ps.stage_name\nORDER BY dp.production_date, ps.sequence_order",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Daily Production Output (+ additions / - corrections)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "bfvn5qddvug3kd"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "orange",
+            "mode": "fixed"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 40
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 11,
+      "targets": [
+        {
+          "queryType": "time_series",
+          "rawQueryText": "SELECT\n  rl.rework_date AS time,\n  ps.stage_name AS metric,\n  SUM(rl.quantity_reworked) AS value\nFROM rework_log rl\nJOIN production_stages ps ON ps.id = rl.stage_id\nJOIN production_projects pp ON pp.id = rl.project_id\nWHERE (pp.project_name = '$project' OR '$project' = 'All')\n  AND rl.rework_date >= date('now', '-30 days')\nGROUP BY rl.rework_date, ps.id, ps.stage_name\nORDER BY rl.rework_date, ps.sequence_order",
+          "refId": "A",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "title": "Rework Trend",
+      "type": "timeseries"
+    }
+  ]
+}\

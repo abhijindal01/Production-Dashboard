@@ -1,0 +1,843 @@
+#!/usr/bin/env python3
+
+import sqlite3
+import sys
+import re
+from datetime import date
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DEBUG = False
+
+
+# ============================================================
+# PARSE PART-DB COMMENT
+# ============================================================
+
+def parse_comment(comment):
+
+    if not comment:
+        return None, None
+
+    text = str(comment)
+
+    # Part-DB HTML line breaks
+    text = re.sub(
+        r"<br\s*/?>",
+        " ",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # HTML non-breaking spaces
+    text = re.sub(
+        r"&nbsp;",
+        " ",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # Handle escaped underscores
+    text = text.replace(r"\_", "_")
+    text = text.replace(r"\\_", "_")
+
+    # Normalize whitespace
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    # --------------------------------------------------------
+    # PROJECT
+    # --------------------------------------------------------
+
+    project_match = re.search(
+        r"PROD_PROJECT\s*=\s*(.*?)(?=\s+PROD_STAGE\s*=|$)",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # --------------------------------------------------------
+    # STAGE
+    # --------------------------------------------------------
+
+    stage_match = re.search(
+        r"PROD_STAGE\s*=\s*(.*?)\s*$",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    project_name = None
+    stage_name = None
+
+    if project_match:
+        project_name = project_match.group(1).strip()
+
+    if stage_match:
+        stage_name = stage_match.group(1).strip()
+
+    return project_name, stage_name
+
+
+# ============================================================
+# GET OR CREATE PROJECT
+# ============================================================
+
+def get_or_create_project(cur, project_name, part_id):
+
+    cur.execute(
+        """
+        SELECT id
+        FROM production_projects
+        WHERE project_name = ?
+        LIMIT 1
+        """,
+        (project_name,)
+    )
+
+    row = cur.fetchone()
+
+    if row:
+        return row[0]
+
+    cur.execute(
+        """
+        INSERT INTO production_projects
+        (
+            project_name,
+            start_date
+        )
+        VALUES (?, ?)
+        """,
+        (
+            project_name,
+            date.today().isoformat()
+        )
+    )
+
+    return cur.lastrowid
+
+
+# ============================================================
+# GET OR CREATE STAGE
+# ============================================================
+
+def get_or_create_stage(
+    cur,
+    project_id,
+    stage_name
+):
+
+    cur.execute(
+        """
+        SELECT id
+        FROM production_stages
+        WHERE project_id = ?
+          AND stage_name = ?
+        LIMIT 1
+        """,
+        (
+            project_id,
+            stage_name
+        )
+    )
+
+    row = cur.fetchone()
+
+    if row:
+        return row[0]
+
+    cur.execute(
+        """
+        SELECT COALESCE(
+            MAX(sequence_order),
+            0
+        ) + 1
+        FROM production_stages
+        WHERE project_id = ?
+        """,
+        (project_id,)
+    )
+
+    sequence_order = cur.fetchone()[0]
+
+    cur.execute(
+        """
+        INSERT INTO production_stages
+        (
+            project_id,
+            stage_name,
+            sequence_order
+        )
+        VALUES (?, ?, ?)
+        """,
+        (
+            project_id,
+            stage_name,
+            sequence_order
+        )
+    )
+
+    return cur.lastrowid
+
+
+# ============================================================
+# GET CURRENT STAGE
+# ============================================================
+
+def get_current_stage(cur, project_id):
+
+    cur.execute(
+        """
+        SELECT current_stage_id
+        FROM production_projects
+        WHERE id = ?
+        """,
+        (project_id,)
+    )
+
+    row = cur.fetchone()
+
+    if row and row[0] is not None:
+        return row[0]
+
+    cur.execute(
+        """
+        SELECT id
+        FROM production_stages
+        WHERE project_id = ?
+        ORDER BY sequence_order DESC
+        LIMIT 1
+        """,
+        (project_id,)
+    )
+
+    row = cur.fetchone()
+
+    if row:
+        return row[0]
+
+    return None
+
+
+# ============================================================
+# GET PREVIOUS SNAPSHOT
+# ============================================================
+
+def get_previous_quantity(cur, part_id):
+
+    cur.execute(
+        """
+        SELECT last_known_quantity
+        FROM part_stock_snapshot
+        WHERE part_id = ?
+        """,
+        (part_id,)
+    )
+
+    row = cur.fetchone()
+
+    if row is None:
+        return None
+
+    return int(row[0])
+
+
+# ============================================================
+# UPDATE SNAPSHOT
+# ============================================================
+
+def update_snapshot(
+    cur,
+    part_id,
+    quantity
+):
+
+    cur.execute(
+        """
+        INSERT INTO part_stock_snapshot
+        (
+            part_id,
+            last_known_quantity,
+            last_checked
+        )
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+
+        ON CONFLICT(part_id)
+        DO UPDATE SET
+            last_known_quantity =
+                excluded.last_known_quantity,
+            last_checked =
+                CURRENT_TIMESTAMP
+        """,
+        (
+            int(part_id),
+            int(quantity)
+        )
+    )
+
+
+# ============================================================
+# UPDATE PART MAPPING
+# ============================================================
+
+def update_part_mapping(
+    cur,
+    part_id,
+    project_id,
+    stage_id,
+    project_name,
+    stage_name
+):
+
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # production_part_mapping contains:
+    #
+    # part_id
+    # project_id
+    # stage_id
+    # project_name
+    # stage_name
+    #
+    # We update the existing mapping if it exists.
+    # Otherwise insert it.
+    # --------------------------------------------------------
+
+    cur.execute(
+        """
+        SELECT part_id
+        FROM production_part_mapping
+        WHERE part_id = ?
+        LIMIT 1
+        """,
+        (int(part_id),)
+    )
+
+    row = cur.fetchone()
+
+    if row:
+
+        cur.execute(
+            """
+            UPDATE production_part_mapping
+            SET
+                project_id = ?,
+                stage_id = ?,
+                project_name = ?,
+                stage_name = ?
+            WHERE part_id = ?
+            """,
+            (
+                project_id,
+                stage_id,
+                project_name,
+                stage_name,
+                int(part_id)
+            )
+        )
+
+    else:
+
+        cur.execute(
+            """
+            INSERT INTO production_part_mapping
+            (
+                part_id,
+                project_id,
+                stage_id,
+                project_name,
+                stage_name
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                int(part_id),
+                project_id,
+                stage_id,
+                project_name,
+                stage_name
+            )
+        )
+
+
+# ============================================================
+# INSERT PRODUCTION DELTA
+# ============================================================
+
+def insert_production_delta(
+    cur,
+    project_id,
+    stage_id,
+    delta
+):
+
+    cur.execute(
+        """
+        INSERT INTO daily_production
+        (
+            project_id,
+            stage_id,
+            production_date,
+            quantity_produced
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            project_id,
+            stage_id,
+            date.today().isoformat(),
+            int(delta)
+        )
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    if len(sys.argv) != 3:
+
+        print(
+            "Usage:\n"
+            "python3 partdb_sync.py "
+            "<partdb.db> <production.db>"
+        )
+
+        sys.exit(1)
+
+    partdb_path = sys.argv[1]
+    production_path = sys.argv[2]
+
+    print()
+    print("=" * 70)
+    print("PART-DB → PRODUCTION SYNC")
+    print("=" * 70)
+    print()
+
+    partdb = None
+    proddb = None
+
+    try:
+
+        # ----------------------------------------------------
+        # DATABASE CONNECTIONS
+        # ----------------------------------------------------
+
+        partdb = sqlite3.connect(
+            partdb_path
+        )
+
+        proddb = sqlite3.connect(
+            production_path
+        )
+
+        partdb_cur = partdb.cursor()
+        proddb_cur = proddb.cursor()
+
+        proddb_cur.execute(
+            "PRAGMA foreign_keys = ON"
+        )
+
+        # ----------------------------------------------------
+        # READ PART-DB PARTS
+        # ----------------------------------------------------
+
+        partdb_cur.execute(
+            """
+            SELECT
+                id,
+                comment
+            FROM parts
+            WHERE comment IS NOT NULL
+              AND TRIM(comment) != ''
+            """
+        )
+
+        all_parts = partdb_cur.fetchall()
+
+        print(
+            f"Parts with comments found: "
+            f"{len(all_parts)}"
+        )
+
+        print()
+
+        # ----------------------------------------------------
+        # FIND PRODUCTION PARTS
+        # ----------------------------------------------------
+
+        tracked_parts = []
+
+        for part_id, comment in all_parts:
+
+            project_name, stage_name = parse_comment(
+                comment
+            )
+
+            if project_name:
+
+                tracked_parts.append(
+                    (
+                        int(part_id),
+                        project_name,
+                        stage_name,
+                        comment
+                    )
+                )
+
+                print(
+                    f"[TRACKED PART] "
+                    f"ID={part_id} | "
+                    f"Project='{project_name}' | "
+                    f"Stage='{stage_name}'"
+                )
+
+        print()
+
+        print(
+            f"Production tracked parts found: "
+            f"{len(tracked_parts)}"
+        )
+
+        print()
+
+        # ----------------------------------------------------
+        # GET CURRENT STOCK FROM PART-DB
+        # ----------------------------------------------------
+
+        partdb_cur.execute(
+            """
+            SELECT
+                id_part,
+                COALESCE(SUM(amount), 0)
+            FROM part_lots
+            GROUP BY id_part
+            """
+        )
+
+        current_stock = {}
+
+        for part_id, quantity in partdb_cur.fetchall():
+
+            current_stock[
+                int(part_id)
+            ] = int(quantity)
+
+        # ----------------------------------------------------
+        # COUNTERS
+        # ----------------------------------------------------
+
+        additions = 0
+        subtractions = 0
+        unchanged = 0
+        baselines = 0
+        skipped = 0
+        mappings = 0
+
+        # ----------------------------------------------------
+        # PROCESS PARTS
+        # ----------------------------------------------------
+
+        for (
+            part_id,
+            project_name,
+            stage_name,
+            comment
+        ) in tracked_parts:
+
+            # ------------------------------------------------
+            # PROJECT
+            # ------------------------------------------------
+
+            project_id = get_or_create_project(
+                proddb_cur,
+                project_name,
+                part_id
+            )
+
+            # ------------------------------------------------
+            # STAGE
+            # ------------------------------------------------
+
+            if stage_name:
+
+                stage_id = get_or_create_stage(
+                    proddb_cur,
+                    project_id,
+                    stage_name
+                )
+
+                # Current stage
+                proddb_cur.execute(
+                    """
+                    UPDATE production_projects
+                    SET current_stage_id = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        stage_id,
+                        project_id
+                    )
+                )
+
+            else:
+
+                stage_id = get_current_stage(
+                    proddb_cur,
+                    project_id
+                )
+
+            # ------------------------------------------------
+            # UPDATE PART MAPPING
+            #
+            # THIS WAS MISSING BEFORE.
+            # ------------------------------------------------
+
+            if stage_id is not None:
+
+                update_part_mapping(
+                    proddb_cur,
+                    part_id,
+                    project_id,
+                    stage_id,
+                    project_name,
+                    stage_name
+                )
+
+                mappings += 1
+
+                print(
+                    f"[MAPPING] "
+                    f"Part={part_id} | "
+                    f"Project={project_name} "
+                    f"(ID={project_id}) | "
+                    f"Stage={stage_name} "
+                    f"(ID={stage_id})"
+                )
+
+            # ------------------------------------------------
+            # CURRENT STOCK
+            # ------------------------------------------------
+
+            new_quantity = int(
+                current_stock.get(
+                    part_id,
+                    0
+                )
+            )
+
+            # ------------------------------------------------
+            # PREVIOUS SNAPSHOT
+            # ------------------------------------------------
+
+            previous_quantity = get_previous_quantity(
+                proddb_cur,
+                part_id
+            )
+
+            # ------------------------------------------------
+            # FIRST RUN
+            # ------------------------------------------------
+
+            if previous_quantity is None:
+
+                update_snapshot(
+                    proddb_cur,
+                    part_id,
+                    new_quantity
+                )
+
+                baselines += 1
+
+                print(
+                    f"[BASELINE] "
+                    f"Part={part_id} | "
+                    f"Stock={new_quantity}"
+                )
+
+                continue
+
+            # ------------------------------------------------
+            # CALCULATE DELTA
+            # ------------------------------------------------
+
+            delta = (
+                new_quantity -
+                previous_quantity
+            )
+
+            # ------------------------------------------------
+            # NO CHANGE
+            # ------------------------------------------------
+
+            if delta == 0:
+
+                unchanged += 1
+
+                update_snapshot(
+                    proddb_cur,
+                    part_id,
+                    new_quantity
+                )
+
+                print(
+                    f"[NO CHANGE] "
+                    f"Part={part_id} | "
+                    f"Stock={new_quantity}"
+                )
+
+                continue
+
+            # ------------------------------------------------
+            # NO STAGE
+            # ------------------------------------------------
+
+            if stage_id is None:
+
+                skipped += 1
+
+                print(
+                    f"[WARNING] "
+                    f"Part={part_id} has no stage. "
+                    f"Delta={delta:+} NOT logged."
+                )
+
+                # IMPORTANT:
+                # Do NOT update snapshot.
+                #
+                # The delta will be retried on the
+                # next sync after the stage is fixed.
+
+                continue
+
+            # ------------------------------------------------
+            # INSERT DELTA FIRST
+            # ------------------------------------------------
+
+            insert_production_delta(
+                proddb_cur,
+                project_id,
+                stage_id,
+                delta
+            )
+
+            # ------------------------------------------------
+            # ONLY AFTER INSERT SUCCESS:
+            # UPDATE SNAPSHOT
+            # ------------------------------------------------
+
+            update_snapshot(
+                proddb_cur,
+                part_id,
+                new_quantity
+            )
+
+            # ------------------------------------------------
+            # LOG
+            # ------------------------------------------------
+
+            if delta > 0:
+
+                additions += 1
+
+                print(
+                    f"[ADDITION] "
+                    f"Part={part_id} | "
+                    f"{previous_quantity} → "
+                    f"{new_quantity} | "
+                    f"+{delta} | "
+                    f"Stage={stage_name}"
+                )
+
+            else:
+
+                subtractions += 1
+
+                print(
+                    f"[SUBTRACTION] "
+                    f"Part={part_id} | "
+                    f"{previous_quantity} → "
+                    f"{new_quantity} | "
+                    f"{delta} | "
+                    f"Stage={stage_name}"
+                )
+
+        # ----------------------------------------------------
+        # COMMIT
+        # ----------------------------------------------------
+
+        proddb.commit()
+
+        print()
+        print("=" * 70)
+        print("SYNC COMPLETE")
+        print("=" * 70)
+
+        print(
+            f"Mappings:            {mappings}"
+        )
+
+        print(
+            f"Additions:           {additions}"
+        )
+
+        print(
+            f"Subtractions:        {subtractions}"
+        )
+
+        print(
+            f"No changes:          {unchanged}"
+        )
+
+        print(
+            f"New baselines:       {baselines}"
+        )
+
+        print(
+            f"Skipped:             {skipped}"
+        )
+
+        print("=" * 70)
+
+    except Exception as error:
+
+        # ----------------------------------------------------
+        # ROLLBACK EVERYTHING
+        # ----------------------------------------------------
+
+        if proddb:
+
+            proddb.rollback()
+
+        print()
+        print("=" * 70)
+        print("[FATAL ERROR]")
+        print("=" * 70)
+        print(error)
+        print("=" * 70)
+
+        sys.exit(1)
+
+    finally:
+
+        if partdb:
+            partdb.close()
+
+        if proddb:
+            proddb.close()
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()
