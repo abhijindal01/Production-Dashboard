@@ -84,6 +84,73 @@ def parse_comment(comment):
 
 
 # ============================================================
+# ENSURE GROUP TABLE
+# ============================================================
+
+def ensure_group_table(cur):
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS production_part_groups
+        (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            stage_id INTEGER NOT NULL,
+            part_name TEXT NOT NULL,
+            total_quantity INTEGER NOT NULL DEFAULT 0,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (project_id, stage_id, part_name)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_part_groups_name
+        ON production_part_groups(part_name)
+        """
+    )
+
+
+# ============================================================
+# UPSERT PART GROUP
+# ============================================================
+
+def upsert_part_group(
+    cur,
+    project_id,
+    stage_id,
+    part_name,
+    total_quantity
+):
+
+    cur.execute(
+        """
+        INSERT INTO production_part_groups
+        (
+            project_id,
+            stage_id,
+            part_name,
+            total_quantity,
+            last_updated
+        )
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+
+        ON CONFLICT(project_id, stage_id, part_name)
+        DO UPDATE SET
+            total_quantity = excluded.total_quantity,
+            last_updated = CURRENT_TIMESTAMP
+        """,
+        (
+            int(project_id),
+            int(stage_id),
+            str(part_name),
+            int(total_quantity)
+        )
+    )
+
+
+# ============================================================
 # GET OR CREATE PROJECT
 # ============================================================
 
@@ -447,6 +514,12 @@ def main():
         )
 
         # ----------------------------------------------------
+        # ENSURE GROUPED PART TABLE EXISTS
+        # ----------------------------------------------------
+
+        ensure_group_table(proddb_cur)
+
+        # ----------------------------------------------------
         # READ PART-DB PARTS
         # ----------------------------------------------------
 
@@ -454,6 +527,7 @@ def main():
             """
             SELECT
                 id,
+                name,
                 comment
             FROM parts
             WHERE comment IS NOT NULL
@@ -476,7 +550,7 @@ def main():
 
         tracked_parts = []
 
-        for part_id, comment in all_parts:
+        for part_id, part_name, comment in all_parts:
 
             project_name, stage_name = parse_comment(
                 comment
@@ -487,6 +561,7 @@ def main():
                 tracked_parts.append(
                     (
                         int(part_id),
+                        part_name,
                         project_name,
                         stage_name,
                         comment
@@ -496,6 +571,7 @@ def main():
                 print(
                     f"[TRACKED PART] "
                     f"ID={part_id} | "
+                    f"Name='{part_name}' | "
                     f"Project='{project_name}' | "
                     f"Stage='{stage_name}'"
                 )
@@ -543,11 +619,24 @@ def main():
         mappings = 0
 
         # ----------------------------------------------------
+        # PART-NAME GROUPS
+        #
+        # key: (project_id, stage_id, part_name)
+        # value: current stock quantity
+        #
+        # Parts with the SAME name in the same project+stage
+        # are merged into one group row.
+        # ----------------------------------------------------
+
+        part_groups = {}
+
+        # ----------------------------------------------------
         # PROCESS PARTS
         # ----------------------------------------------------
 
         for (
             part_id,
+            part_name,
             project_name,
             stage_name,
             comment
@@ -633,6 +722,28 @@ def main():
                     0
                 )
             )
+
+            # ------------------------------------------------
+            # ACCUMULATE PART-NAME GROUP
+            # ------------------------------------------------
+
+            if stage_id is not None:
+
+                group_name = str(part_name).strip()
+
+                if not group_name:
+                    group_name = f"Part {part_id}"
+
+                group_key = (
+                    int(project_id),
+                    int(stage_id),
+                    group_name
+                )
+
+                part_groups[group_key] = (
+                    part_groups.get(group_key, 0) +
+                    new_quantity
+                )
 
             # ------------------------------------------------
             # PREVIOUS SNAPSHOT
@@ -771,6 +882,45 @@ def main():
                 )
 
         # ----------------------------------------------------
+        # WRITE PART-NAME GROUPS
+        #
+        # The group table is fully derived from the tracked
+        # parts on every run, so the dashboard always shows
+        # the CURRENT quantity for every group.
+        # ----------------------------------------------------
+
+        proddb_cur.execute(
+            "DELETE FROM production_part_groups"
+        )
+
+        groups = 0
+
+        for (
+            project_id,
+            stage_id,
+            part_name
+        ), total_quantity in sorted(
+            part_groups.items()
+        ):
+
+            upsert_part_group(
+                proddb_cur,
+                project_id,
+                stage_id,
+                part_name,
+                total_quantity
+            )
+
+            groups += 1
+
+            print(
+                f"[GROUP] "
+                f"'{part_name}' | "
+                f"Stage ID={stage_id} | "
+                f"Quantity={total_quantity}"
+            )
+
+        # ----------------------------------------------------
         # COMMIT
         # ----------------------------------------------------
 
@@ -780,6 +930,10 @@ def main():
         print("=" * 70)
         print("SYNC COMPLETE")
         print("=" * 70)
+
+        print(
+            f"Part groups:         {groups}"
+        )
 
         print(
             f"Mappings:            {mappings}"
