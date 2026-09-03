@@ -77,6 +77,45 @@ SKIP_DIRS = {
 SKIP_EXT = {".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe"}
 
 
+def autodetect_roots():
+    """
+    Candidate directories that commonly hold the Python label printing
+    app or its installed package source.
+    """
+    roots = [
+        "/opt",
+        "/srv",
+        "/var/www",
+        "/usr/local/lib",
+        "/usr/lib/python3",
+        "/home",
+        os.path.expanduser("~"),
+    ]
+
+    try:
+        import site  # noqa: PLC0415
+        import sysconfig  # noqa: PLC0415
+
+        purelib = sysconfig.get_path("purelib", "posix_prefix")
+        if purelib:
+            roots.append(purelib)
+        for path in site.getsitepackages():
+            roots.append(path)
+        roots.append(site.getusersitepackages())
+    except Exception:
+        pass
+
+    seen = set()
+    result = []
+    for root in roots:
+        if not root or root in seen:
+            continue
+        seen.add(root)
+        if os.path.isdir(root):
+            result.append(root)
+    return result or ["."]
+
+
 def replacement_tokens():
     """
     Choose the most compatible replacement for the local Pillow version.
@@ -145,7 +184,7 @@ def main():
     parser.add_argument(
         "paths",
         nargs="*",
-        default=["."],
+        default=None,
         help="Python files or directories to scan (default: current directory)",
     )
     parser.add_argument(
@@ -153,10 +192,30 @@ def main():
         action="store_true",
         help="Dry run: only show what would change, do not modify anything",
     )
+    parser.add_argument(
+        "--autodetect",
+        action="store_true",
+        help=(
+            "Scan common install locations ( /opt, /srv, /var/www, "
+            "/usr/local/lib, home dir, Python site-packages ) for the "
+            "offending code instead of a user-supplied path"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.autodetect:
+        paths = autodetect_roots()
+    elif args.paths:
+        paths = args.paths
+    else:
+        paths = ["."]
 
     tokens = replacement_tokens()
     print("Replacement:", tokens[0])
+    if args.autodetect:
+        print("Auto-detected search locations:")
+        for root in paths:
+            print(f"  - {root}")
 
     changed = 0
     total = 0
