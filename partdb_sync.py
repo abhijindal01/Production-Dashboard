@@ -81,7 +81,10 @@ def open_source_db(source_arg, mysql_mode):
             f"partdb.db, or use --mysql to read Part-DB directly."
         )
 
-    connection = sqlite3.connect(source_arg)
+    connection = sqlite3.connect(
+        source_arg,
+        timeout=30.0
+    )
     cursor = connection.cursor()
     return connection, cursor, SOURCE_SQLITE
 
@@ -214,15 +217,26 @@ def validate_source_schema(cursor, flavour, source_arg):
 
 
 # ============================================================
-# PARSE PART-DB COMMENT
+# TEXT CLEANING (Part-DB comments / legacy names)
 # ============================================================
 
-def parse_comment(comment):
+HTML_TAG_RE = re.compile(
+    r"<[^>]*>"
+)
 
-    if not comment:
-        return None, None
 
-    text = str(comment)
+def clean_text(text):
+    """
+    Strip everything that Part-DB embeds in its comment field:
+    HTML tags (spans, style attributes), entities and line breaks.
+    Also converts escaped underscores and normalizes whitespace.
+
+    'Drone Soccer Balls with RC</span> <span style="...">' -> 'Drone Soccer Balls with RC'
+    """
+    if text is None:
+        return ""
+
+    text = str(text)
 
     # Part-DB HTML line breaks
     text = re.sub(
@@ -232,24 +246,45 @@ def parse_comment(comment):
         flags=re.IGNORECASE
     )
 
-    # HTML non-breaking spaces
+    # HTML entities
     text = re.sub(
         r"&nbsp;",
         " ",
         text,
         flags=re.IGNORECASE
     )
+    text = re.sub(
+        r"&amp;",
+        "&",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # Remove every remaining HTML tag
+    text = HTML_TAG_RE.sub(" ", text)
 
     # Handle escaped underscores
     text = text.replace(r"\_", "_")
     text = text.replace(r"\\_", "_")
 
     # Normalize whitespace
-    text = re.sub(
+    return re.sub(
         r"\s+",
         " ",
         text
     ).strip()
+
+
+# ============================================================
+# PARSE PART-DB COMMENT
+# ============================================================
+
+def parse_comment(comment):
+
+    if not comment:
+        return None, None
+
+    text = clean_text(comment)
 
     # --------------------------------------------------------
     # PROJECT
@@ -281,6 +316,175 @@ def parse_comment(comment):
         stage_name = stage_match.group(1).strip()
 
     return project_name, stage_name
+
+
+# ============================================================
+# LEGACY NAME CLEANUP
+# ============================================================
+
+def table_exists(cur, table_name):
+
+    cur.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = ?
+        LIMIT 1
+        """,
+        (table_name,)
+    )
+
+    return cur.fetchone() is not None
+
+
+def normalize_project_and_stage_names(cur):
+    """
+    Older syncs stored names with HTML junk from Part-DB comments
+    ('Project</span> <span style="...">'). Rename those rows to the
+    clean names so the auto-sync matches them instead of creating
+    duplicate projects/stages.
+    """
+
+    renamed_projects = 0
+    renamed_stages = 0
+
+    cur.execute(
+        "SELECT id, project_name FROM production_projects"
+    )
+
+    for project_id, name in cur.fetchall():
+
+        clean = clean_text(name)
+
+        if clean and clean != name:
+
+            cur.execute(
+                "UPDATE production_projects "
+                "SET project_name = ? "
+                "WHERE id = ?",
+                (clean, project_id)
+            )
+
+            renamed_projects += 1
+
+    cur.execute(
+        "SELECT id, stage_name FROM production_stages"
+    )
+
+    for stage_id, name in cur.fetchall():
+
+        clean = clean_text(name)
+
+        if clean and clean != name:
+
+            cur.execute(
+                "UPDATE production_stages "
+                "SET stage_name = ? "
+                "WHERE id = ?",
+                (clean, stage_id)
+            )
+
+            renamed_stages += 1
+
+    if renamed_projects or renamed_stages:
+        print(
+            f"[SCHEMA] Cleaned HTML from names: "
+            f"{renamed_projects} project(s), "
+            f"{renamed_stages} stage(s)"
+        )
+
+
+def deduplicate_projects_and_stages(cur):
+    """
+    After cleaning, two rows may have identical names (one old
+    polluted row, one new clean row). Merge duplicates: keep the
+    lowest id, move stages/deltas/mappings to it, delete the rest.
+    """
+
+    # Tables that reference project_id / stage_id
+    project_tables = [
+        "production_stages",
+        "daily_production",
+        "production_part_mapping",
+        "quality_tests",
+        "rework_log",
+    ]
+    stage_tables = [
+        "daily_production",
+        "quality_tests",
+        "rework_log",
+    ]
+
+    # ------------------------------------------------ projects
+    cur.execute(
+        "SELECT id, project_name FROM production_projects ORDER BY id"
+    )
+
+    keep_project = {}
+
+    for project_id, name in cur.fetchall():
+
+        key = clean_text(name).lower()
+
+        if key not in keep_project:
+
+            keep_project[key] = project_id
+            continue
+
+        target = keep_project[key]
+
+        for table in project_tables:
+            if table_exists(cur, table):
+                cur.execute(
+                    f"UPDATE {table} SET project_id = ? "
+                    f"WHERE project_id = ?",
+                    (target, project_id)
+                )
+
+        cur.execute(
+            "DELETE FROM production_projects WHERE id = ?",
+            (project_id,)
+        )
+
+    # ------------------------------------------------ stages
+    cur.execute(
+        "SELECT id, project_id, stage_name "
+        "FROM production_stages ORDER BY project_id, id"
+    )
+
+    keep_stage = {}
+
+    for stage_id, project_id, name in cur.fetchall():
+
+        key = (int(project_id), clean_text(name).lower())
+
+        if key not in keep_stage:
+
+            keep_stage[key] = stage_id
+            continue
+
+        target = keep_stage[key]
+
+        for table in stage_tables:
+            if table_exists(cur, table):
+                cur.execute(
+                    f"UPDATE {table} SET stage_id = ? "
+                    f"WHERE stage_id = ?",
+                    (target, stage_id)
+                )
+
+        cur.execute(
+            "UPDATE production_projects "
+            "SET current_stage_id = ? "
+            "WHERE current_stage_id = ?",
+            (target, stage_id)
+        )
+
+        cur.execute(
+            "DELETE FROM production_stages WHERE id = ?",
+            (stage_id,)
+        )
 
 
 # ============================================================
@@ -376,9 +580,10 @@ def get_or_create_project(cur, project_name, part_id):
         INSERT INTO production_projects
         (
             project_name,
-            start_date
+            start_date,
+            target_quantity
         )
-        VALUES (?, ?)
+        VALUES (?, ?, 0)
         """,
         (
             project_name,
@@ -735,7 +940,8 @@ def main():
         )
 
         proddb = sqlite3.connect(
-            production_path
+            production_path,
+            timeout=30.0
         )
 
         proddb_cur = proddb.cursor()
@@ -766,6 +972,14 @@ def main():
         # ----------------------------------------------------
 
         ensure_group_table(proddb_cur)
+
+        # ----------------------------------------------------
+        # CLEAN LEGACY HTML NAMES + MERGE DUPLICATES
+        # ----------------------------------------------------
+
+        normalize_project_and_stage_names(proddb_cur)
+
+        deduplicate_projects_and_stages(proddb_cur)
 
         # ----------------------------------------------------
         # READ PART-DB PARTS

@@ -1,0 +1,22 @@
+[Unit]
+Description=Part-DB production dashboard auto-sync (watch Part-DB, update quantities)
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=server
+WorkingDirectory=/home/server/Production/production-db
+Environment=PARTDB_SOURCE_DB=/home/server/parts-db-setup/db/app.db
+Environment=PRODUCTION_DB=/home/server/Production/production-db/production.db
+Environment=SYNC_SCRIPT=/home/server/Production/production-db/partdb_sync.py
+Environment=POLL_SECONDS=5
+Environment=SETTLE_SECONDS=3
+Environment=FULL_INTERVAL=300
+ExecStart=/bin/bash /home/server/Production/production-db/partdb_auto_sync.sh
+Restart=always
+RestartSec=5
+# Give the loop a chance to write the log before systemd restarts it
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
