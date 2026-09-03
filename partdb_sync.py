@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sqlite3
 import sys
 import re
@@ -11,6 +12,205 @@ from datetime import date
 # ============================================================
 
 DEBUG = False
+
+# Part-DB source database flavours
+SOURCE_SQLITE = "sqlite"
+SOURCE_MYSQL = "mysql"
+
+# Tables that must exist in the Part-DB source database
+REQUIRED_SOURCE_TABLES = ("parts", "part_lots")
+
+
+# ============================================================
+# SOURCE DATABASE HELPERS
+# ============================================================
+
+class SourceSchemaError(Exception):
+    """Raised when the Part-DB source cannot be read or is the
+    wrong database (e.g. empty file / missing parts table)."""
+
+
+def load_dotenv_lite(path=".env"):
+    """
+    Very small .env loader (only for the MySQL connection settings).
+    Existing environment variables are not overwritten.
+    """
+    if not os.path.isfile(path):
+        return
+
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def env_first(*names, default=None):
+    """Return the first set environment variable among names."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
+def open_source_db(source_arg, mysql_mode):
+    """
+    Open the Part-DB source database.
+
+    SQLite mode : source_arg is the path of a .db file
+    MySQL  mode : source_arg is the Part-DB database name
+                  (can be empty -> taken from .env / environment)
+
+    Returns (connection, cursor, flavour). The cursor returns
+    plain tuples like the SQLite cursor, so both modes share the
+    same reading code.
+    """
+    if mysql_mode:
+        return open_source_mysql(source_arg)
+
+    if not os.path.isfile(source_arg):
+        raise SourceSchemaError(
+            f"Part-DB source file not found: '{source_arg}'\n"
+            f"Run from the directory that contains your real "
+            f"partdb.db, or use --mysql to read Part-DB directly."
+        )
+
+    connection = sqlite3.connect(source_arg)
+    cursor = connection.cursor()
+    return connection, cursor, SOURCE_SQLITE
+
+
+def open_source_mysql(database):
+    """Connect to the Part-DB MySQL/MariaDB database directly."""
+    try:
+        import pymysql  # noqa: PLC0415
+    except ImportError:
+        raise SourceSchemaError(
+            "MySQL support needs the 'pymysql' package.\n"
+            "  sudo apt install python3-pymysql   # Debian/Ubuntu\n"
+            "  pip3 install pymysql               # any pip\n"
+            "Then re-run the sync with --mysql."
+        )
+
+    load_dotenv_lite()
+
+    host = env_first(
+        "PARTDB_MYSQL_HOST", "PARTDB_DB_HOST", default="localhost"
+    )
+    port = int(env_first(
+        "PARTDB_MYSQL_PORT", "PARTDB_DB_PORT", default="3306"
+    ))
+    name = (
+        database
+        or env_first(
+            "PARTDB_MYSQL_DATABASE",
+            "PARTDB_DB_NAME",
+            "MYSQL_DATABASE",
+            default="partdb",
+        )
+    )
+    user = env_first(
+        "PARTDB_MYSQL_USER",
+        "PARTDB_DB_USER",
+        "MYSQL_USER",
+        default="partdb",
+    )
+    password = env_first(
+        "PARTDB_MYSQL_PASSWORD",
+        "PARTDB_DB_PASSWORD",
+        "MYSQL_PASSWORD",
+        "MYSQL_ROOT_PASSWORD",
+        default="",
+    )
+
+    print(f"[MYSQL] host={host} port={port} db={name} user={user}")
+
+    try:
+        connection = pymysql.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=name,
+            charset="utf8mb4",
+        )
+    except Exception as error:
+        raise SourceSchemaError(
+            f"Could not connect to Part-DB MySQL database "
+            f"'{name}'@{host}:{port} as '{user}':\n{error}\n\n"
+            f"Check the PARTDB_MYSQL_* environment variables "
+            f"(or .env in this folder). Hint for the Part-DB "
+            f"Docker stack: check 'docker compose exec db env' "
+            f"for the MYSQL_* credentials."
+        )
+
+    return connection, connection.cursor(), SOURCE_MYSQL
+
+
+def list_source_tables(cursor, flavour):
+    """Return the table names present in the source database."""
+    if flavour == SOURCE_MYSQL:
+        cursor.execute("SHOW TABLES")
+    else:
+        cursor.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            ORDER BY name
+            """
+        )
+    return [str(row[0]) for row in cursor.fetchall()]
+
+
+def describe_empty_source(source_arg):
+    """Build a helpful message for the most common mistake:
+    pointing at an empty Part-DB file."""
+    return (
+        f"Part-DB source '{source_arg}' has NO tables — it is an "
+        f"empty SQLite database.\n"
+        f"  - Point at the REAL Part-DB database file (the one that "
+        f"contains the 'parts' table), not an empty/new .db file.\n"
+        f"  - Check for other copies:  ls -la partdb.db* *.db\n"
+        f"  - Or read your Part-DB MySQL database directly:  "
+        f"python3 partdb_sync.py --mysql <dbname> production.db"
+    )
+
+
+def validate_source_schema(cursor, flavour, source_arg):
+    """Ensure the source really is a Part-DB database."""
+    tables = list_source_tables(cursor, flavour)
+
+    missing = [
+        table for table in REQUIRED_SOURCE_TABLES
+        if table not in tables
+    ]
+
+    if not missing:
+        return tables
+
+    if not tables:
+        raise SourceSchemaError(describe_empty_source(source_arg))
+
+    raise SourceSchemaError(
+        f"Part-DB source '{source_arg}' is missing tables: "
+        f"{', '.join(missing)}.\n"
+        f"Tables actually found:\n"
+        f"  {', '.join(tables) or '(none)'}\n\n"
+        f"Common causes:\n"
+        f"  1. You passed production.db by mistake — Part-DB and "
+        f"     production data are two DIFFERENT files.\n"
+        f"  2. partdb.db is a new/empty file — replace it with the "
+        f"     real Part-DB database.\n"
+        f"  3. Your Part-DB runs in Docker/MySQL — then use:  "
+        f"python3 partdb_sync.py --mysql <dbname> production.db"
+    )
 
 
 # ============================================================
@@ -470,18 +670,49 @@ def insert_production_delta(
 
 def main():
 
-    if len(sys.argv) != 3:
+    mysql_mode = "--mysql" in sys.argv
+    args = [
+        argument
+        for argument in sys.argv[1:]
+        if argument != "--mysql"
+    ]
 
-        print(
-            "Usage:\n"
-            "python3 partdb_sync.py "
-            "<partdb.db> <production.db>"
-        )
+    if mysql_mode:
+        # --mysql [partdb_database_name] production.db
+        if len(args) not in (1, 2):
+            print(
+                "Usage:\n"
+                "python3 partdb_sync.py --mysql "
+                "<production.db>\n"
+                "python3 partdb_sync.py --mysql "
+                "<partdb_db_name> <production.db>\n\n"
+                "Part-DB MySQL connection is read from PARTDB_MYSQL_* "
+                "environment variables or .env:\n"
+                "  PARTDB_MYSQL_HOST (default localhost)\n"
+                "  PARTDB_MYSQL_PORT (default 3306)\n"
+                "  PARTDB_MYSQL_DATABASE\n"
+                "  PARTDB_MYSQL_USER / PARTDB_MYSQL_PASSWORD\n"
+                "(PARTDB_DB_* and the Docker stack's MYSQL_* names "
+                "are also accepted.)"
+            )
+            sys.exit(1)
 
-        sys.exit(1)
+        partdb_arg = args[0] if len(args) == 2 else ""
+        production_path = args[-1]
 
-    partdb_path = sys.argv[1]
-    production_path = sys.argv[2]
+    else:
+        if len(args) != 2:
+            print(
+                "Usage:\n"
+                "python3 partdb_sync.py "
+                "<partdb.db> <production.db>\n"
+                "python3 partdb_sync.py --mysql "
+                "[partdb_db_name] <production.db>"
+            )
+            sys.exit(1)
+
+        partdb_arg = args[0]
+        production_path = args[1]
 
     print()
     print("=" * 70)
@@ -498,20 +729,37 @@ def main():
         # DATABASE CONNECTIONS
         # ----------------------------------------------------
 
-        partdb = sqlite3.connect(
-            partdb_path
+        partdb, partdb_cur, partdb_flavour = open_source_db(
+            partdb_arg,
+            mysql_mode
         )
 
         proddb = sqlite3.connect(
             production_path
         )
 
-        partdb_cur = partdb.cursor()
         proddb_cur = proddb.cursor()
 
         proddb_cur.execute(
             "PRAGMA foreign_keys = ON"
         )
+
+        # ----------------------------------------------------
+        # CHECK PART-DB SOURCE SCHEMA
+        # ----------------------------------------------------
+
+        tables = validate_source_schema(
+            partdb_cur,
+            partdb_flavour,
+            partdb_arg or "(mysql database)"
+        )
+
+        print(
+            f"Part-DB source tables: "
+            f"{len(tables)} found"
+        )
+
+        print()
 
         # ----------------------------------------------------
         # ENSURE GROUPED PART TABLE EXISTS
@@ -960,6 +1208,17 @@ def main():
         )
 
         print("=" * 70)
+
+    except SourceSchemaError as error:
+
+        print()
+        print("=" * 70)
+        print("[FATAL ERROR - SOURCE DATABASE]")
+        print("=" * 70)
+        print(str(error))
+        print("=" * 70)
+
+        sys.exit(1)
 
     except Exception as error:
 
