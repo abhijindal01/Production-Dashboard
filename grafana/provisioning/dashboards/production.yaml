@@ -1,0 +1,15 @@
+# Grafana provisioning: auto-load the Production Workflow dashboard.
+# Copy to /etc/grafana/provisioning/dashboards/ with production-dashboard-sqlite.json
+# in the same 'options.path' directory, then restart Grafana.
+apiVersion: 1
+
+providers:
+  - name: production
+    orgId: 1
+    folder: Production
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

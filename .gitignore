@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Sync operations (keep the repo free of runtime artifacts)
+*.log
+*.lock
+*.db-wal
+*.db-shm
+*.bak
