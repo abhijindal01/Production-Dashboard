@@ -1,0 +1,12 @@
+# Grafana provisioning: SQLite datasource for the Production Workflow dashboard.
+# Copy to /etc/grafana/provisioning/datasources/ (adjust the path!) and restart Grafana.
+apiVersion: 1
+
+datasources:
+  - name: ProductionDB
+    type: frser-sqlite-datasource
+    access: proxy
+    # IMPORTANT: absolute path on the GRAFANA SERVER host, readable by the grafana user.
+    jsonData:
+      path: /var/lib/grafana/production.db
+    editable: true
