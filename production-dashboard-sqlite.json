@@ -15,16 +15,783 @@
       }
     ]
   },
-  "description": "Production Workflow - live Part-DB stock sync, stage output, quality, rework and project progress. Requires the frser-sqlite-datasource plugin pointed at production.db.",
+  "description": "Simple production board for the shop floor: what we made, what is left, whether the quality is OK and whether the data is live. Needs the frser-sqlite-datasource plugin pointed at production.db.",
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
+  "graphTooltip": 0,
   "links": [],
-  "refresh": "30s",
+  "panels": [
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "How many pieces were counted today. A piece is counted when its stock goes up in Part-DB, so 0 usually just means nothing has been booked yet today.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(SUM(dp.quantity_produced), 0) AS value FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND dp.production_date = date('now', 'localtime')",
+          "refId": "A"
+        }
+      ],
+      "title": "Made today",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "Pieces counted in the last week, today included. Handy when today is still empty.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(SUM(dp.quantity_produced), 0) AS value FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND dp.production_date >= date('now', 'localtime', '-6 days')",
+          "refId": "A"
+        }
+      ],
+      "title": "Made in the last 7 days",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "How many pieces are left before the goal is reached. 0 means the goal is done.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT MAX(0, (SELECT COALESCE(SUM(pp1.target_quantity), 0) FROM production_projects pp1 WHERE (pp1.project_name = '$project' OR '$project' = 'All')) - (SELECT COALESCE(SUM(dp1.quantity_produced), 0) FROM daily_production dp1 JOIN production_projects pp2 ON pp2.id = dp1.project_id WHERE (pp2.project_name = '$project' OR '$project' = 'All'))) AS value",
+          "refId": "A"
+        }
+      ],
+      "title": "Still to make",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "How much of the goal is finished. The goal is the target quantity set for the job; if it says 'goal not set yet', nobody entered a goal - that does not mean production stopped.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "noValue": "goal not set yet",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT ROUND((SELECT COALESCE(SUM(dp.quantity_produced), 0) FROM daily_production dp JOIN production_projects p2 ON p2.id = dp.project_id WHERE (p2.project_name = '$project' OR '$project' = 'All')) * 100.0 / NULLIF((SELECT COALESCE(SUM(pp2.target_quantity), 0) FROM production_projects pp2 WHERE (pp2.project_name = '$project' OR '$project' = 'All')), 0), 1) AS value",
+          "refId": "A"
+        }
+      ],
+      "title": "Goal finished",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "Out of every 100 pieces that were checked, how many passed. If it says 'no checks logged yet', nobody has entered a check - that is not a failure.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 98
+              }
+            ]
+          },
+          "unit": "percent",
+          "noValue": "no checks logged yet"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT ROUND(SUM(qt.quantity_passed) * 100.0 / NULLIF(SUM(qt.quantity_tested), 0), 1) AS value FROM production_projects pp JOIN quality_tests qt ON qt.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality: pieces that passed",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "Pieces that had to be redone. 0 is what you want to see; a growing number means something at the last step is off.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(SUM(rl.quantity_reworked), 0) AS value FROM production_projects pp LEFT JOIN rework_log rl ON rl.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Sent back to be fixed",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "This board only moves when the Part-DB sync runs (a small job on the server, every 5 minutes). Red means that job stopped - the numbers above are then old, not zero. Tell whoever runs the sync.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "OK": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Yes, up to date"
+                },
+                "CHECK": {
+                  "color": "orange",
+                  "index": 1,
+                  "text": "Last check over a day ago"
+                },
+                "NONE": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "Sync stopped - numbers are old"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT CASE WHEN MAX(s.last_checked) IS NULL THEN 'NONE' WHEN datetime(MAX(s.last_checked)) >= datetime('now', '-1 day') THEN 'OK' WHEN datetime(MAX(s.last_checked)) >= datetime('now', '-7 days') THEN 'CHECK' ELSE 'NONE' END AS value FROM part_stock_snapshot s JOIN production_part_mapping m ON m.part_id = s.part_id WHERE (m.project_name = '$project' OR '$project' = 'All')",
+          "refId": "A"
+        }
+      ],
+      "title": "Is this page current?",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "How many pieces each step of the job has produced, in the order the steps happen. A step with no bar has not been reached yet. With several projects shown, the bar names say which job they belong to.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 0,
+        "y": 10
+      },
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 24,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT CASE WHEN '$project' = 'All' THEN pp.project_name || ' - ' || ps.sequence_order || '. ' || ps.stage_name ELSE ps.sequence_order || '. ' || ps.stage_name END AS metric, COALESCE(SUM(dp.quantity_produced), 0) AS value FROM production_stages ps JOIN production_projects pp ON pp.id = ps.project_id LEFT JOIN daily_production dp ON dp.stage_id = ps.id AND dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All') GROUP BY ps.id, pp.project_name, ps.stage_name, ps.sequence_order ORDER BY pp.project_name, ps.sequence_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Each step, in order",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "One line per job: what we promised, what is done, what is left, which step we are on and when the last piece was counted.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% done"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "#EAB839",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 90
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Still to make"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "#EAB839",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 10,
+        "y": 10
+      },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "table",
+          "rawQueryText": "SELECT pp.project_name AS Project, CASE pp.status WHEN 'in_progress' THEN 'Running' WHEN 'planned' THEN 'Not started' WHEN 'completed' THEN 'Finished' WHEN 'done' THEN 'Finished' ELSE COALESCE(pp.status, '-') END AS Status, COALESCE((SELECT ps.stage_name FROM production_stages ps WHERE ps.id = pp.current_stage_id), 'not decided yet') AS \"Current step\", pp.target_quantity AS Goal, COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0) AS \"Made so far\", MAX(0, pp.target_quantity - COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0)) AS \"Still to make\", COALESCE(ROUND(COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0) * 100.0 / NULLIF(pp.target_quantity, 0), 1), 0) AS \"% done\", COALESCE((SELECT MAX(dp.production_date) FROM daily_production dp WHERE dp.project_id = pp.id), 'nothing yet') AS \"Last counted\" FROM production_projects pp WHERE (pp.project_name = '$project' OR '$project' = 'All') ORDER BY pp.start_date DESC, pp.project_name",
+          "refId": "A"
+        }
+      ],
+      "title": "Every job, one line each",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS_SQLITE}"
+      },
+      "description": "Pieces counted per day, all steps added together, for the time range chosen at the top right (default: the last 30 days). A bar below the line means stock was reduced in Part-DB that day - nobody un-made a piece. A piece that passes two steps on the same day is counted twice here; 'Each step, in order' shows the split. No bars at all simply means nothing was booked in the chosen range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "pieces",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.7,
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "queryType": "time_series",
+          "rawQueryText": "SELECT dp.production_date || 'T00:00:00Z' AS time, 'Made' AS metric, SUM(dp.quantity_produced) AS value FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND date(dp.production_date) BETWEEN date(${__from}/1000, 'unixepoch') AND date(${__to}/1000, 'unixepoch') GROUP BY dp.production_date ORDER BY dp.production_date",
+          "refId": "A"
+        }
+      ],
+      "title": "How many we made each day",
+      "type": "timeseries"
+    },
+    {
+      "description": "Plain-language guide to the tiles and what to do when a number looks odd.",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 11,
+      "options": {
+        "content": "### Reading this board\n\n| Tile | In plain words |\n|---|---|\n| **Made today** | Pieces booked since this morning. Booked = the stock went up in Part-DB. |\n| **Made in the last 7 days** | The same, for the whole week (today included). |\n| **Still to make** | How many pieces are left to reach the goal. 0 = goal reached. |\n| **Goal finished** | How far we are. Red under 50%, yellow 50-90%, green 90% and up. |\n| **Quality: pieces that passed** | Out of every 100 pieces that were checked, how many were OK. |\n| **Sent back to be fixed** | Pieces that had to be redone. 0 is what you want. |\n| **Is this page current?** | Green = live. Red = the sync stopped, so the numbers above are old. |\n| **Each step, in order** | How many pieces each step of the job has produced. |\n| **Every job, one line each** | The same story per project. |\n\n### When a number looks wrong\n\n1. **A tile shows 0** - most of the time nothing has been booked today yet, which is\n   normal early in the morning or on a quiet shift.\n2. **\"Sync stopped - numbers are old\"** - tell whoever runs the sync on the server\n   (`partdb_sync.py`, normally every 5 minutes from cron). Until it runs, this page\n   does not move.\n3. **A part never shows up in the counts** - its comment in Part-DB must say\n   `PROD_PROJECT=<job name> PROD_STAGE=<step name>`. No tag, no numbers.\n4. **Goal finished says 0% although work was done** - the goal quantity was never\n   entered for this project. Ask your supervisor to set it.\n5. **Quality or rework tiles are empty** - nobody has entered a check yet. That is\n   expected until quality logging starts.\n6. **A bar in the chart goes below the line** - somebody reduced the stock in Part-DB\n   for that day (a mis-count, a return to store). Nobody un-made finished pieces.\n\nUse **Which project?** at the top right to look at one job only. The date picker\ndefaults to the last 30 days and only changes the \"How many we made each day\" chart - the numbers above are always the full\nstory.\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.0.0",
+      "title": "How to read this board",
+      "type": "text"
+    }
+  ],
+  "refresh": "1m",
   "schemaVersion": 39,
   "tags": [
     "production",
-    "manufacturing",
+    "shop-floor",
     "partdb"
   ],
   "templating": {
@@ -38,7 +805,7 @@
         "definition": "frser-sqlite-datasource",
         "hide": 0,
         "includeAll": false,
-        "label": "Database",
+        "label": "SQLite database (pick ProductionDB)",
         "multi": false,
         "name": "DS_SQLITE",
         "options": [],
@@ -62,6 +829,7 @@
         "hide": 0,
         "includeAll": true,
         "allValue": "All",
+        "label": "Which project?",
         "multi": false,
         "name": "project",
         "options": [],
@@ -78,1235 +846,17 @@
     "from": "now-30d",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
   "timezone": "browser",
-  "title": "Production Workflow",
+  "title": "Production Board",
   "uid": "production-workflow",
-  "version": 2,
-  "weekStart": "",
-  "panels": [
-    {
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
-      "title": "Key Metrics",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Net produced units across the selected project(s). Net = additions minus corrections (stock decreases logged by the sync). All-time; not affected by the time picker.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(SUM(dp.quantity_produced), 0) AS value FROM production_projects pp LEFT JOIN daily_production dp ON dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Produced (net)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Gross added units (positive stock deltas only). Compare with Total Produced (net) to see how much was corrected away.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(SUM(CASE WHEN dp.quantity_produced > 0 THEN dp.quantity_produced ELSE 0 END), 0) AS value FROM production_projects pp LEFT JOIN daily_production dp ON dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
-          "refId": "A"
-        }
-      ],
-      "title": "Units Added",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Gross corrections (stock decreases) as a positive number. Non-zero values are normal when Part-DB stock is adjusted downwards.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(SUM(CASE WHEN dp.quantity_produced < 0 THEN -dp.quantity_produced ELSE 0 END), 0) AS value FROM production_projects pp LEFT JOIN daily_production dp ON dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
-          "refId": "A"
-        }
-      ],
-      "title": "Corrections",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Share of tested units that passed quality control. Shows 0 when no quality tests have been recorded yet (see README for how to log them).",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 90
-              },
-              {
-                "color": "green",
-                "value": 98
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 1
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(ROUND(SUM(qt.quantity_passed) * 100.0 / NULLIF(SUM(qt.quantity_tested), 0), 1), 0) AS value FROM production_projects pp LEFT JOIN quality_tests qt ON qt.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
-          "refId": "A"
-        }
-      ],
-      "title": "Quality Pass Rate",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Total reworked units from the rework log. Shows 0 until rework is recorded (see README).",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
-      "id": 6,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(SUM(rl.quantity_reworked), 0) AS value FROM production_projects pp LEFT JOIN rework_log rl ON rl.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All')",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Reworked",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Net produced units vs the sum of project targets. Set target_quantity per project in production_projects; projects without a target make this read 0%.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "green",
-                "value": 90
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
-      },
-      "id": 7,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(ROUND((SELECT COALESCE(SUM(dp.quantity_produced), 0) FROM daily_production dp JOIN production_projects p2 ON p2.id = dp.project_id WHERE (p2.project_name = '$project' OR '$project' = 'All')) * 100.0 / NULLIF((SELECT COALESCE(SUM(pp2.target_quantity), 0) FROM production_projects pp2 WHERE (pp2.project_name = '$project' OR '$project' = 'All')), 0), 1), 0) AS value",
-          "refId": "A"
-        }
-      ],
-      "title": "Progress vs Target",
-      "type": "gauge"
-    },
-    {
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "id": 8,
-      "title": "Production Flow",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Net output per stage (stages with no production yet show 0). Series are prefixed with the project name so nothing collides when 'All' projects are selected.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 6
-      },
-      "id": 9,
-      "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT pp.project_name || ' ▸ ' || ps.stage_name AS metric, COALESCE(SUM(dp.quantity_produced), 0) AS value FROM production_stages ps JOIN production_projects pp ON pp.id = ps.project_id LEFT JOIN daily_production dp ON dp.stage_id = ps.id AND dp.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All') GROUP BY ps.id, pp.project_name, ps.stage_name, ps.sequence_order ORDER BY pp.project_name, ps.sequence_order",
-          "refId": "A"
-        }
-      ],
-      "title": "Net Output by Stage",
-      "type": "bargauge"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Tested / passed / failed units per stage with the pass rate. Empty until quality tests are recorded (see README).",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "color-background"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Failed"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Pass %"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 90
-                    },
-                    {
-                      "color": "green",
-                      "value": 98
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 6
-      },
-      "id": 10,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT pp.project_name || ' ▸ ' || ps.stage_name AS Stage, COALESCE(SUM(qt.quantity_tested), 0) AS Tested, COALESCE(SUM(qt.quantity_passed), 0) AS Passed, COALESCE(SUM(qt.quantity_failed), 0) AS Failed, COALESCE(ROUND(SUM(qt.quantity_passed) * 100.0 / NULLIF(SUM(qt.quantity_tested), 0), 1), 0) AS \"Pass %\" FROM production_stages ps JOIN production_projects pp ON pp.id = ps.project_id LEFT JOIN quality_tests qt ON qt.stage_id = ps.id AND qt.project_id = pp.id WHERE (pp.project_name = '$project' OR '$project' = 'All') GROUP BY ps.id, pp.project_name, ps.stage_name, ps.sequence_order ORDER BY pp.project_name, ps.sequence_order",
-          "refId": "A"
-        }
-      ],
-      "title": "Quality by Stage",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Live Part-DB stock per tracked part (last snapshot value) and when it was last checked. If a part is missing here, its comment lacks a PROD_PROJECT tag.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 6
-      },
-      "id": 11,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT m.part_id AS \"Part ID\", m.project_name AS Project, m.stage_name AS Stage, COALESCE(s.last_known_quantity, 0) AS \"Current Stock\", s.last_checked AS \"Last Checked\" FROM production_part_mapping m LEFT JOIN part_stock_snapshot s ON s.part_id = m.part_id WHERE (m.project_name = '$project' OR '$project' = 'All') ORDER BY m.part_id",
-          "refId": "A"
-        }
-      ],
-      "title": "Current Stock by Part",
-      "type": "table"
-    },
-    {
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
-      "id": 12,
-      "title": "Trends",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Daily net output per stage within the selected time range. Positive bars are additions, negative bars are stock corrections.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": true,
-            "axisColorMode": "text",
-            "axisLabel": "units",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 60,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "id": 13,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "time_series",
-          "rawQueryText": "SELECT dp.production_date || 'T00:00:00Z' AS time, pp.project_name || ' ▸ ' || ps.stage_name AS metric, SUM(dp.quantity_produced) AS value FROM daily_production dp JOIN production_stages ps ON ps.id = dp.stage_id JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND date(dp.production_date) BETWEEN date(${__from}/1000, 'unixepoch') AND date(${__to}/1000, 'unixepoch') GROUP BY dp.production_date, ps.id, pp.project_name, ps.stage_name, ps.sequence_order ORDER BY dp.production_date, ps.sequence_order",
-          "refId": "A",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "title": "Daily Output by Stage",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Running total of net produced units against the combined project target. The gap between the two lines is the remaining work.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "units",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Target"
-            },
-            "properties": [
-              {
-                "id": "custom.drawStyle",
-                "value": "line"
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 15
-      },
-      "id": 14,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "time_series",
-          "rawQueryText": "SELECT d.production_date || 'T00:00:00Z' AS time, 'Cumulative produced' AS metric, SUM(d.daily_qty) OVER (ORDER BY d.production_date ROWS UNBOUNDED PRECEDING) AS value FROM (SELECT dp.production_date AS production_date, SUM(dp.quantity_produced) AS daily_qty FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND date(dp.production_date) BETWEEN date(${__from}/1000, 'unixepoch') AND date(${__to}/1000, 'unixepoch') GROUP BY dp.production_date) d ORDER BY d.production_date",
-          "refId": "A",
-          "timeColumns": [
-            "time"
-          ]
-        },
-        {
-          "queryType": "time_series",
-          "rawQueryText": "SELECT dp.production_date || 'T00:00:00Z' AS time, 'Target' AS metric, (SELECT COALESCE(SUM(pp2.target_quantity), 0) FROM production_projects pp2 WHERE (pp2.project_name = '$project' OR '$project' = 'All')) AS value FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND date(dp.production_date) BETWEEN date(${__from}/1000, 'unixepoch') AND date(${__to}/1000, 'unixepoch') GROUP BY dp.production_date ORDER BY dp.production_date",
-          "refId": "B",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "title": "Cumulative Output vs Target",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Reworked units per stage within the selected time range. Empty until rework is recorded (see README).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "orange",
-            "mode": "fixed"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "units",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 60,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "id": 15,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "time_series",
-          "rawQueryText": "SELECT rl.rework_date || 'T00:00:00Z' AS time, pp.project_name || ' ▸ ' || ps.stage_name AS metric, SUM(rl.quantity_reworked) AS value FROM rework_log rl JOIN production_stages ps ON ps.id = rl.stage_id JOIN production_projects pp ON pp.id = rl.project_id WHERE (pp.project_name = '$project' OR '$project' = 'All') AND date(rl.rework_date) BETWEEN date(${__from}/1000, 'unixepoch') AND date(${__to}/1000, 'unixepoch') GROUP BY rl.rework_date, ps.id, pp.project_name, ps.stage_name, ps.sequence_order ORDER BY rl.rework_date, ps.sequence_order",
-          "refId": "A",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "title": "Rework Trend",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Latest 100 production entries (all time, newest first). Negative quantities are stock corrections.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Qty"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "mode": "gradient",
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 0
-                    },
-                    {
-                      "color": "green",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "id": 16,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT dp.production_date AS Date, pp.project_name AS Project, ps.stage_name AS Stage, dp.quantity_produced AS Qty FROM daily_production dp JOIN production_projects pp ON pp.id = dp.project_id JOIN production_stages ps ON ps.id = dp.stage_id WHERE (pp.project_name = '$project' OR '$project' = 'All') ORDER BY dp.production_date DESC, dp.id DESC LIMIT 100",
-          "refId": "A"
-        }
-      ],
-      "title": "Recent Production Log",
-      "type": "table"
-    },
-    {
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 31
-      },
-      "id": 17,
-      "title": "Projects & Sync Health",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "One row per project: status, current stage, target, net produced, remaining units, progress and last production activity.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Progress %"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "mode": "gradient",
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 50
-                    },
-                    {
-                      "color": "green",
-                      "value": 90
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "id": 18,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT pp.project_name AS Project, pp.status AS Status, (SELECT ps.stage_name FROM production_stages ps WHERE ps.id = pp.current_stage_id) AS \"Current Stage\", pp.target_quantity AS Target, COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0) AS Produced, pp.target_quantity - COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0) AS Remaining, COALESCE(ROUND(COALESCE((SELECT SUM(dp.quantity_produced) FROM daily_production dp WHERE dp.project_id = pp.id), 0) * 100.0 / NULLIF(pp.target_quantity, 0), 1), 0) AS \"Progress %\", (SELECT MAX(dp.production_date) FROM daily_production dp WHERE dp.project_id = pp.id) AS \"Last Activity\" FROM production_projects pp WHERE (pp.project_name = '$project' OR '$project' = 'All') ORDER BY pp.start_date DESC, pp.project_name",
-          "refId": "A"
-        }
-      ],
-      "title": "Project Overview",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "${DS_SQLITE}"
-      },
-      "description": "Every tracked Part-DB part and its mapping, last known stock and last sync check. 'stale' means the sync has not seen the part for 7+ days - check the comment tag and the sync cron job.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [
-            {
-              "options": {
-                "ok": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "ok"
-                },
-                "stale": {
-                  "color": "orange",
-                  "index": 1,
-                  "text": "stale"
-                },
-                "never synced": {
-                  "color": "red",
-                  "index": 2,
-                  "text": "never synced"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
-      "id": 19,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": true,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "queryType": "table",
-          "rawQueryText": "SELECT m.part_id AS \"Part ID\", m.project_name AS Project, m.stage_name AS Stage, COALESCE(s.last_known_quantity, 0) AS \"Last Known Qty\", s.last_checked AS \"Last Checked\", CASE WHEN s.last_checked IS NULL THEN 'never synced' WHEN datetime(s.last_checked) < datetime('now', '-7 days') THEN 'stale' ELSE 'ok' END AS Status FROM production_part_mapping m LEFT JOIN part_stock_snapshot s ON s.part_id = m.part_id WHERE (m.project_name = '$project' OR '$project' = 'All') ORDER BY m.part_id",
-          "refId": "A"
-        }
-      ],
-      "title": "Part Mapping & Sync Status",
-      "type": "table"
-    }
-  ]
+  "version": 3,
+  "weekStart": ""
 }
